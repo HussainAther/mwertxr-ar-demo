@@ -10,6 +10,11 @@
     <link rel="stylesheet" href="style.css">
   </head>
   <body>
+    <div id="role-ui"></div>
+    <div id="director-ui" style="display:none">
+      <p>Select a target:</p>
+      <button onclick="selectTarget('whale')">Whale</button>
+    </div>
     <a-scene
       xrweb="" 
       embedded 
@@ -25,23 +30,4 @@
     </a-scene>
   </body>
 </html>
-
-
-// === public/game.client.js ===
-const socket = io();
-
-const urlParams = new URLSearchParams(window.location.search);
-const roomId = urlParams.get('id') || 'default';
-socket.emit('join_room', roomId);
-
-const whale = document.getElementById('whale');
-
-whale.addEventListener('click', () => {
-  socket.emit('object_selected', { roomId, objectId: 'whale' });
-});
-
-socket.on('object_selected', ({ objectId }) => {
-  const obj = document.getElementById(objectId);
-  if (obj) obj.setAttribute('animation', 'property: scale; to: 1.5 1.5 1.5; dur: 500; dir: alternate; loop: 2');
-});
 
