@@ -23,7 +23,7 @@ io.on('connection', (socket) => {
     socket.join(roomId);
     console.log(`Client ${socket.id} joined room ${roomId}`);
 
-    if (!roomData[roomId]) roomData[roomId] = { clients: [] };
+    if (!roomData[roomId]) roomData[roomId] = { clients: [], target: null };
 
     const role = roomData[roomId].clients.length === 0 ? 'director' : 'guesser';
     roomData[roomId].clients.push({ id: socket.id, role });
@@ -32,11 +32,13 @@ io.on('connection', (socket) => {
   });
 
   socket.on('select_target', ({ roomId, objectId }) => {
+    roomData[roomId].target = objectId;
     socket.to(roomId).emit('target_selected', { objectId });
   });
 
   socket.on('object_selected', ({ roomId, objectId }) => {
-    socket.to(roomId).emit('object_selected', { objectId });
+    const correct = roomData[roomId]?.target === objectId;
+    io.to(roomId).emit('feedback', { objectId, correct });
   });
 
   socket.on('disconnect', () => {
