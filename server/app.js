@@ -10,32 +10,31 @@ const io = socketIo(server);
 
 const PORT = process.env.PORT || 8000;
 
-// Serve static files
 app.use(express.static(path.join(__dirname, '../public')));
 
 const roomData = {};
 
-// Socket connection
 io.on('connection', (socket) => {
   console.log('New client connected:', socket.id);
 
   socket.on('join_room', (roomId) => {
     socket.join(roomId);
-    console.log(`Client ${socket.id} joined room ${roomId}`);
-
     if (!roomData[roomId]) {
       roomData[roomId] = {
         clients: [],
         target: null,
         round: 1,
         scores: {},
-        maxRounds: 5
+        maxRounds: 5,
+        logs: []
       };
     }
 
     const room = roomData[roomId];
-    room.clients.push(socket.id);
-    room.scores[socket.id] = 0;
+    if (!room.clients.includes(socket.id)) {
+      room.clients.push(socket.id);
+      room.scores[socket.id] = 0;
+    }
 
     if (room.clients.length === 2) {
       assignRoles(roomId);
@@ -57,14 +56,43 @@ io.on('connection', (socket) => {
     if (correct) {
       room.scores[socket.id] += 1;
     }
+
+    // Log result
+    room.logs.push({
+      round: room.round,
+      guesser: socket.id,
+      target: room.target,
+      guess: objectId,
+      correct,
+      timestamp: Date.now()
+    });
+
     io.to(roomId).emit('feedback', { objectId, correct });
 
-    // Advance to next round
     room.round += 1;
     if (room.round > room.maxRounds) {
-      io.to(roomId).emit('game_over', { scores: room.scores });
-      delete roomData[roomId];
+      io.to(roomId).emit('game_over', {
+        scores: room.scores,
+        logs: room.logs
+      });
     } else {
+      assignRoles(roomId);
+      io.to(roomId).emit('round_info', {
+        round: room.round,
+        scores: room.scores
+      });
+    }
+  });
+
+  socket.on('restart_game', (roomId) => {
+    if (roomData[roomId]) {
+      const room = roomData[roomId];
+      room.round = 1;
+      room.target = null;
+      room.logs = [];
+      for (let client of room.clients) {
+        room.scores[client] = 0;
+      }
       assignRoles(roomId);
       io.to(roomId).emit('round_info', {
         round: room.round,
@@ -86,13 +114,10 @@ io.on('connection', (socket) => {
 function assignRoles(roomId) {
   const room = roomData[roomId];
   if (!room || room.clients.length < 2) return;
-
   const [player1, player2] = room.clients;
   const isEvenRound = room.round % 2 === 0;
-
   const directorId = isEvenRound ? player2 : player1;
   const guesserId = isEvenRound ? player1 : player2;
-
   io.to(directorId).emit('role_assigned', { role: 'director' });
   io.to(guesserId).emit('role_assigned', { role: 'guesser' });
 }
@@ -144,6 +169,7 @@ socket.on('feedback', ({ objectId, correct }) => {
   const feedbackDiv = document.getElementById('feedback');
   feedbackDiv.innerText = correct ? '✅ Correct!' : '❌ Wrong object';
   feedbackDiv.style.display = 'block';
+  playSound(correct ? 'correctSound' : 'wrongSound');
   setTimeout(() => { feedbackDiv.style.display = 'none'; }, 2000);
 });
 
@@ -152,7 +178,18 @@ socket.on('round_info', ({ round, scores }) => {
   document.getElementById('round-ui').innerText = `Round ${round} — Scores: ${scoreText}`;
 });
 
-socket.on('game_over', ({ scores }) => {
+socket.on('game_over', ({ scores, logs }) => {
   alert('Game Over! Final Scores:\n' + JSON.stringify(scores, null, 2));
+  console.log('Game Log:', logs);
+  document.getElementById('restart-ui').style.display = 'block';
 });
 
+function restartGame() {
+  socket.emit('restart_game', roomId);
+  document.getElementById('restart-ui').style.display = 'none';
+}
+
+function playSound(id) {
+  const sound = document.querySelector(`#${id}`);
+  if (sound) sound.components.sound.playSound();
+}
