@@ -33,15 +33,17 @@ io.on('connection', (socket) => {
       };
     }
 
-    const role = roomData[roomId].clients.length === 0 ? 'director' : 'guesser';
-    roomData[roomId].clients.push({ id: socket.id, role });
-    roomData[roomId].scores[socket.id] = 0;
+    const room = roomData[roomId];
+    room.clients.push(socket.id);
+    room.scores[socket.id] = 0;
 
-    socket.emit('role_assigned', { role });
-    io.to(roomId).emit('round_info', {
-      round: roomData[roomId].round,
-      scores: roomData[roomId].scores
-    });
+    if (room.clients.length === 2) {
+      assignRoles(roomId);
+      io.to(roomId).emit('round_info', {
+        round: room.round,
+        scores: room.scores
+      });
+    }
   });
 
   socket.on('select_target', ({ roomId, objectId }) => {
@@ -63,6 +65,7 @@ io.on('connection', (socket) => {
       io.to(roomId).emit('game_over', { scores: room.scores });
       delete roomData[roomId];
     } else {
+      assignRoles(roomId);
       io.to(roomId).emit('round_info', {
         round: room.round,
         scores: room.scores
@@ -73,88 +76,18 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     console.log('Client disconnected:', socket.id);
     for (const roomId in roomData) {
-      roomData[roomId].clients = roomData[roomId].clients.filter(c => c.id !== socket.id);
-      delete roomData[roomId].scores[socket.id];
+      const room = roomData[roomId];
+      room.clients = room.clients.filter(id => id !== socket.id);
+      delete room.scores[socket.id];
     }
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}`);
-});
+function assignRoles(roomId) {
+  const room = roomData[roomId];
+  if (!room || room.clients.length < 2) return;
 
+  const [player1, player2] = room.clients;
+  const isEvenRound = room.round % 2 === 0;
 
-// === public/game.client.js ===
-const socket = io();
-
-const urlParams = new URLSearchParams(window.location.search);
-const roomId = urlParams.get('id') || 'default';
-socket.emit('join_room', roomId);
-
-let userRole = null;
-
-socket.on('role_assigned', ({ role }) => {
-  userRole = role;
-  document.getElementById('role-ui').innerText = `You are the ${role}`;
-  if (role === 'director') {
-    document.getElementById('director-ui').style.display = 'block';
-  }
-});
-
-function selectTarget(objectId) {
-  socket.emit('select_target', { roomId, objectId });
-}
-
-const clickableObjects = document.querySelectorAll('.clickable');
-clickableObjects.forEach(obj => {
-  obj.addEventListener('click', () => {
-    socket.emit('object_selected', { roomId, objectId: obj.id });
-  });
-});
-
-socket.on('object_selected', ({ objectId }) => {
-  const obj = document.getElementById(objectId);
-  if (obj) obj.setAttribute('animation', 'property: scale; to: 1.5 1.5 1.5; dur: 500; dir: alternate; loop: 2');
-});
-
-socket.on('target_selected', ({ objectId }) => {
-  const obj = document.getElementById(objectId);
-  if (obj) obj.setAttribute('material', 'color: green');
-});
-
-socket.on('feedback', ({ objectId, correct }) => {
-  const feedbackDiv = document.getElementById('feedback');
-  feedbackDiv.innerText = correct ? '✅ Correct!' : '❌ Wrong object';
-  feedbackDiv.style.display = 'block';
-  setTimeout(() => { feedbackDiv.style.display = 'none'; }, 2000);
-});
-
-socket.on('round_info', ({ round, scores }) => {
-  const scoreText = Object.entries(scores).map(([id, score]) => `${id.slice(-4)}: ${score}`).join(' | ');
-  document.getElementById('round-ui').innerText = `Round ${round} — Scores: ${scoreText}`;
-});
-
-socket.on('game_over', ({ scores }) => {
-  alert('Game Over! Final Scores:\n' + JSON.stringify(scores, null, 2));
-});
-
-
-// === public/index.html ===
-<!-- Add this to body -->
-<div id="round-ui"></div>
-
-
-// === public/style.css ===
-#round-ui {
-  position: absolute;
-  top: 60px;
-  left: 10px;
-  z-index: 10;
-  background: rgba(0,0,0,0.7);
-  color: #fff;
-  padding: 10px;
-  border-radius: 8px;
-  font-size: 1.1em;
-  font-family: monospace;
-}
-
+  const directorId = isEven
