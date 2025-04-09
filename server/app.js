@@ -111,6 +111,37 @@ io.on('connection', (socket) => {
   });
 });
 
+socket.on('timeout', (roomId) => {
+  const room = roomData[roomId];
+  if (!room) return;
+
+  // Log timeout as incorrect guess
+  room.logs.push({
+    round: room.round,
+    guesser: 'timeout',
+    target: room.target,
+    guess: null,
+    correct: false,
+    timestamp: Date.now()
+  });
+
+  room.round++;
+  if (room.round > room.maxRounds) {
+    io.to(roomId).emit('game_over', {
+      scores: room.scores,
+      logs: room.logs
+    });
+  } else {
+    assignRoles(roomId);
+    io.to(roomId).emit('feedback', { objectId: null, correct: false });
+    io.to(roomId).emit('round_info', {
+      round: room.round,
+      scores: room.scores
+    });
+  }
+});
+
+
 function assignRoles(roomId) {
   const room = roomData[roomId];
   if (!room || room.clients.length < 2) return;
